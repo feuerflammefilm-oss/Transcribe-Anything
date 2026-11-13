@@ -55,7 +55,7 @@ actor TranscriptionEngine {
 
     // MARK: - Modelle laden
 
-    private func prepareWhisper(_ quality: Quality, report: ProgressReporter) async throws -> WhisperKit {
+    private func prepareWhisper(_ quality: Quality, report: @escaping ProgressReporter) async throws -> WhisperKit {
         if let w = whisper, whisperVariant == quality.variant { return w }
         whisper = nil
         report("Sprachmodell wird geladen (nur beim ersten Mal)", 0, nil)
@@ -81,7 +81,7 @@ actor TranscriptionEngine {
         return w
     }
 
-    private func prepareSpeakerKit(report: ProgressReporter) async throws -> SpeakerKit {
+    private func prepareSpeakerKit(report: @escaping ProgressReporter) async throws -> SpeakerKit {
         if let s = speakerKit { return s }
         report("Sprecher-Modell wird geladen (nur beim ersten Mal)", 0, nil)
         let config = PyannoteConfig(downloadBase: Self.modelsDirectory.path, verbose: false)
