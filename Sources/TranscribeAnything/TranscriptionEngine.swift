@@ -131,7 +131,9 @@ actor TranscriptionEngine {
             detectLanguage: options.language.isEmpty,
             skipSpecialTokens: true,
             wordTimestamps: true,
-            chunkingStrategy: .vad
+            // Keine Aufteilung an "leisen" Stellen: Whisper arbeitet sich der Reihe nach
+            // durch die Aufnahme und behält den Zusammenhang zum vorherigen Satz.
+            chunkingStrategy: ChunkingStrategy.none
         )
         let box = ProgressBox()
         let onSegments: SegmentDiscoveryCallback = { segments in

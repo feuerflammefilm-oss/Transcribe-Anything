@@ -15,7 +15,7 @@ Keine Uploads, kein Abo, keine Längenbegrenzung.
 - Suche im Transkript
 
 Voraussetzung: Mac mit Apple Silicon und macOS 26 (Tahoe). Beim ersten Transkribieren werden die
-Sprachmodelle einmalig heruntergeladen (ca. 650 MB) und landen unter
+Sprachmodelle einmalig heruntergeladen (ca. 1,6 GB) und landen unter
 `~/Library/Application Support/Transcribe Anything/`.
 
 ## Installieren

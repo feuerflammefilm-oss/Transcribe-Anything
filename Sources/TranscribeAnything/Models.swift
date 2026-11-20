@@ -54,13 +54,13 @@ enum Quality: String, CaseIterable, Identifiable, Codable, Sendable {
     var title: String {
         switch self {
         case .best: return "Beste Qualität"
-        case .fast: return "Schnell"
+        case .fast: return "Schneller"
         }
     }
     var variant: String {
         switch self {
-        case .best: return "large-v3-v20240930_626MB"
-        case .fast: return "small"
+        case .best: return "large-v3-v20240930_turbo"
+        case .fast: return "large-v3-v20240930_626MB"
         }
     }
 }

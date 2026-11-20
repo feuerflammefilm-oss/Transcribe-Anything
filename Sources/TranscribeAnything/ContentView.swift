@@ -96,6 +96,10 @@ struct SidebarView: View {
                         }
                         .tag(t.id)
                         .contextMenu {
+                            Button("Neu transkribieren (mit aktuellen Einstellungen)") {
+                                store.add(urls: [t.sourceURL])
+                            }
+                            .disabled(!FileManager.default.fileExists(atPath: t.sourcePath))
                             Button("Originaldatei im Finder zeigen") {
                                 NSWorkspace.shared.activateFileViewerSelecting([t.sourceURL])
                             }

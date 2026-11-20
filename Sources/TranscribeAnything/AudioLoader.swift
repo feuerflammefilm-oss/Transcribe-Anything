@@ -19,6 +19,12 @@ enum AudioLoader {
 
     /// Liest Audio oder die Tonspur eines Videos als 16 kHz Mono (Format, das Whisper erwartet).
     static func load(url: URL) async throws -> [Float] {
+        // Reine Audiodateien über den erprobten Weg von WhisperKit lesen
+        let audioOnly: Set<String> = ["wav", "aif", "aiff", "mp3", "m4a", "aac", "flac", "caf"]
+        if audioOnly.contains(url.pathExtension.lowercased()),
+           let samples = try? AudioProcessor.loadAudioAsFloatArray(fromPath: url.path), !samples.isEmpty {
+            return samples
+        }
         do {
             return try await loadWithAssetReader(url: url)
         } catch AudioLoaderError.noAudioTrack {
