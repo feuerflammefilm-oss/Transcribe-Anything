@@ -134,14 +134,29 @@ actor TranscriptionEngine {
             chunkingStrategy: .vad
         )
         let box = ProgressBox()
+        let onSegments: SegmentDiscoveryCallback = { segments in
+            let (end, text) = box.add(segments)
+            report("Wird transkribiert", min(0.99, max(end / duration, whisper.progress.fractionCompleted)), text)
+        }
+        // Bei VAD-Aufteilung meldet WhisperKit neue Abschnitte nur über diese Eigenschaft
+        whisper.segmentDiscoveryCallback = onSegments
+        defer { whisper.segmentDiscoveryCallback = nil }
+
+        // Zusätzlich den internen Fortschritt regelmäßig abfragen
+        let poller = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                let f = whisper.progress.fractionCompleted
+                if f > 0 { report("Wird transkribiert", min(0.99, f), nil) }
+            }
+        }
+        defer { poller.cancel() }
+
         let results = try await whisper.transcribe(
             audioArray: samples,
             decodeOptions: decode,
             callback: { _ in cancel.isCancelled ? false : nil },
-            segmentCallback: { segments in
-                let (end, text) = box.add(segments)
-                report("Wird transkribiert", min(0.99, end / duration), text)
-            }
+            segmentCallback: onSegments
         )
         if cancel.isCancelled { throw EngineError.cancelled }
 

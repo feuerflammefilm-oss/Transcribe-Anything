@@ -160,8 +160,9 @@ final class Store: ObservableObject {
                     url: job.url, options: job.options, cancel: job.cancelFlag,
                     report: { phase, progress, preview in
                         Task { @MainActor in
+                            // Innerhalb einer Phase soll der Balken nie zurückspringen
+                            job.progress = phase == job.phase ? max(job.progress, progress) : progress
                             job.phase = phase
-                            job.progress = progress
                             if let preview { job.preview = preview }
                         }
                     })
