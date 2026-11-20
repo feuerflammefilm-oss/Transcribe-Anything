@@ -253,13 +253,9 @@ actor TranscriptionEngine {
 
         for (i, w) in words.enumerated() {
             let sp = speakers[i]
-            if let last = current.last {
-                let gap = w.start - last.end
-                let sentenceEnd = last.text.trimmingCharacters(in: .whitespaces).last.map { ".?!…".contains($0) } ?? false
-                let length = last.end - (current.first?.start ?? last.end)
-                if sp != currentSpeaker || gap > 3.0 || (sentenceEnd && (gap > 1.2 || length > 45)) {
-                    flush()
-                }
+            // Neuer Absatz nur bei Sprecherwechsel
+            if !current.isEmpty && sp != currentSpeaker {
+                flush()
             }
             if current.isEmpty { currentSpeaker = sp }
             current.append(w)

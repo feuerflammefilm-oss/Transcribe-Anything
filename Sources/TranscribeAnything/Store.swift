@@ -65,6 +65,7 @@ final class Store: ObservableObject {
         transcripts = files
             .filter { $0.pathExtension == "json" }
             .compactMap { try? decoder.decode(Transcript.self, from: Data(contentsOf: $0)) }
+            .map { t -> Transcript in var t = t; t.mergeAdjacentSpeakers(); return t }
             .sorted { $0.createdAt > $1.createdAt }
     }
 

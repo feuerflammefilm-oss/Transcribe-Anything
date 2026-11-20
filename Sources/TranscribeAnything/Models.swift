@@ -40,6 +40,25 @@ struct Transcript: Codable, Identifiable, Hashable, Sendable {
         return "Sprecher \(speaker)"
     }
 
+    /// Fasst aufeinanderfolgende Absätze derselben Person zu einem zusammen.
+    mutating func mergeAdjacentSpeakers() {
+        var merged: [Utterance] = []
+        for u in utterances {
+            guard var last = merged.last, last.speaker == u.speaker else {
+                merged.append(u)
+                continue
+            }
+            // Wortzeiten erhalten, damit Untertitel weiter genau passen
+            let lastWords = last.words.isEmpty ? TranscriptionEngine.spread(text: last.text, start: last.start, end: last.end) : last.words
+            let newWords = u.words.isEmpty ? TranscriptionEngine.spread(text: u.text, start: u.start, end: u.end) : u.words
+            last.text = last.text.trimmingCharacters(in: .whitespacesAndNewlines) + " " + u.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            last.words = (last.words.isEmpty && u.words.isEmpty) ? [] : lastWords + newWords
+            last.end = max(last.end, u.end)
+            merged[merged.count - 1] = last
+        }
+        utterances = merged
+    }
+
     var plainText: String {
         utterances.map { "\(name(for: $0.speaker)): \($0.text)" }.joined(separator: "\n\n")
     }

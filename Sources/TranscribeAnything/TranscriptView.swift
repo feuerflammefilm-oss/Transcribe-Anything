@@ -214,6 +214,7 @@ struct TranscriptView: View {
         var copy = t
         if let i = copy.utterances.firstIndex(where: { $0.id == uid }) {
             copy.utterances[i].speaker = speaker
+            copy.mergeAdjacentSpeakers()
             store.update(copy)
         }
     }
