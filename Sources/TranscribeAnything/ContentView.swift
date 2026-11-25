@@ -110,6 +110,10 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            // Backspace / Entf löscht das ausgewählte Transkript
+            .onDeleteCommand {
+                if let id = store.selectedID, store.transcript(id) != nil { store.delete(id) }
+            }
 
             Divider()
             settings

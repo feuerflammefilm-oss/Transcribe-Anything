@@ -42,6 +42,7 @@ final class Store: ObservableObject {
     private let engine = TranscriptionEngine()
     private var isProcessing = false
     private var saveTasks: [UUID: Task<Void, Never>] = [:]
+    private var runningTasks: [UUID: Task<Transcript, Error>] = [:]
 
     static let mediaExtensions: Set<String> = [
         "wav", "aif", "aiff", "mp3", "m4a", "aac", "flac", "ogg", "opus", "caf", "wma",
@@ -98,9 +99,16 @@ final class Store: ObservableObject {
     }
 
     func delete(_ id: UUID) {
+        let index = transcripts.firstIndex { $0.id == id }
         transcripts.removeAll { $0.id == id }
-        try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(id.uuidString).json"))
-        if selectedID == id { selectedID = transcripts.first?.id }
+        // In den Papierkorb statt endgültig löschen – falls man sich vertippt
+        let file = folder.appendingPathComponent("\(id.uuidString).json")
+        try? FileManager.default.trashItem(at: file, resultingItemURL: nil)
+        if selectedID == id {
+            // Nächsten Eintrag auswählen, damit man mehrere nacheinander löschen kann
+            let i = min(index ?? 0, transcripts.count - 1)
+            selectedID = i >= 0 ? transcripts[i].id : nil
+        }
     }
 
     // MARK: - Warteschlange
@@ -125,13 +133,14 @@ final class Store: ObservableObject {
         Task { await processQueue() }
     }
 
+    /// Bricht sofort ab: Der Eintrag verschwindet direkt, die Arbeit im Hintergrund wird gestoppt.
     func cancel(_ job: Job) {
-        if job.state == .running {
-            job.cancelFlag.cancel()
-            job.phase = "Wird abgebrochen …"
-        } else {
-            jobs.removeAll { $0.id == job.id }
+        job.cancelFlag.cancel()
+        runningTasks[job.id]?.cancel()
+        if selectedID == job.id {
+            selectedID = jobs.first(where: { $0.id != job.id })?.id ?? transcripts.first?.id
         }
+        jobs.removeAll { $0.id == job.id }
     }
 
     func retry(_ job: Job) {
@@ -156,26 +165,37 @@ final class Store: ObservableObject {
         while let job = jobs.first(where: { $0.state == .waiting }) {
             job.state = .running
             job.phase = "Startet …"
-            do {
-                let transcript = try await engine.transcribe(
+            let engine = self.engine
+            let task = Task<Transcript, Error> {
+                try await engine.transcribe(
                     url: job.url, options: job.options, cancel: job.cancelFlag,
                     report: { phase, progress, preview in
                         Task { @MainActor in
+                            guard !job.cancelFlag.isCancelled else { return }
                             // Innerhalb einer Phase soll der Balken nie zurückspringen
                             job.progress = phase == job.phase ? max(job.progress, progress) : progress
                             job.phase = phase
                             if let preview { job.preview = preview }
                         }
                     })
+            }
+            runningTasks[job.id] = task
+            do {
+                let transcript = try await task.value
+                runningTasks[job.id] = nil
+                if job.cancelFlag.isCancelled { continue }
                 var t = transcript
                 t.id = job.id   // damit die Auswahl in der Seitenleiste erhalten bleibt
                 jobs.removeAll { $0.id == job.id }
                 insert(t, select: selectedID == job.id)
                 didFinish = true
-            } catch EngineError.cancelled {
-                jobs.removeAll { $0.id == job.id }
             } catch {
-                job.state = .failed(error.localizedDescription)
+                runningTasks[job.id] = nil
+                if job.cancelFlag.isCancelled || error is CancellationError {
+                    jobs.removeAll { $0.id == job.id }
+                } else {
+                    job.state = .failed(error.localizedDescription)
+                }
             }
         }
         if didFinish { NSSound(named: "Glass")?.play() }

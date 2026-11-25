@@ -99,13 +99,13 @@ actor TranscriptionEngine {
         let samples = try await AudioLoader.load(url: url)
         let duration = Double(samples.count) / AudioLoader.sampleRate
         guard duration > 0.3 else { throw EngineError.noSpeech }
-        if cancel.isCancelled { throw EngineError.cancelled }
+        if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
 
         // 1. Sprecher erkennen
         var spans: [(speaker: Int, start: Double, end: Double)] = []
         if options.speakers != 1 {
             let sk = try await prepareSpeakerKit(report: report)
-            if cancel.isCancelled { throw EngineError.cancelled }
+            if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
             report("Sprecher werden erkannt", 0, nil)
             let diarOptions = PyannoteDiarizationOptions(numberOfSpeakers: options.speakers == 0 ? nil : options.speakers)
             let result = try await sk.diarize(audioArray: samples, options: diarOptions, progressCallback: { p in
@@ -116,11 +116,11 @@ actor TranscriptionEngine {
                 return (id, Double(seg.startTime), Double(seg.endTime))
             }
         }
-        if cancel.isCancelled { throw EngineError.cancelled }
+        if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
 
         // 2. Sprache in Text umwandeln
         let whisper = try await prepareWhisper(options.quality, report: report)
-        if cancel.isCancelled { throw EngineError.cancelled }
+        if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
         report("Wird transkribiert", 0, nil)
 
         let decode = DecodingOptions(
@@ -160,7 +160,7 @@ actor TranscriptionEngine {
             callback: { _ in cancel.isCancelled ? false : nil },
             segmentCallback: onSegments
         )
-        if cancel.isCancelled { throw EngineError.cancelled }
+        if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
 
         // 3. Wörter den Sprechern zuordnen
         let words = Self.collectWords(results)
