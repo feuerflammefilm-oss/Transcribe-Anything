@@ -1,4 +1,4 @@
-# Transcribe Anything
+# FuFF Transcribe
 
 Mac-App zum Transkribieren von Audio und Video – ähnlich wie Turboscribe, aber komplett lokal auf deinem Mac.
 Keine Uploads, kein Abo, keine Längenbegrenzung.
@@ -20,8 +20,8 @@ Sprachmodelle einmalig heruntergeladen (ca. 1,6 GB) und landen unter
 
 ## Installieren
 
-1. Unter **Releases → „latest“** `Transcribe-Anything.zip` herunterladen.
-2. Entpacken und **Transcribe Anything.app** in **Programme** ziehen.
+1. Unter **Releases → „latest“** `FuFF-Transcribe.zip` herunterladen.
+2. Entpacken und **FuFF Transcribe.app** in **Programme** ziehen.
 3. Erster Start: **Rechtsklick → Öffnen**, oder **Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“**.
 
 ## Bauen

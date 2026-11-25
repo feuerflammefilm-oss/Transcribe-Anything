@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Transcribe Anything</string>
+    <string>FuFF Transcribe</string>
     <key>CFBundleDisplayName</key>
-    <string>Transcribe Anything</string>
+    <string>FuFF Transcribe</string>
     <key>CFBundleIdentifier</key>
     <string>app.transcribeanything.TranscribeAnything</string>
     <key>CFBundleExecutable</key>

@@ -16,7 +16,7 @@ struct TranscribeAnythingApp: App {
     @StateObject private var store = Store()
 
     var body: some Scene {
-        WindowGroup("Transcribe Anything") {
+        WindowGroup("FuFF Transcribe") {
             ContentView()
                 .environmentObject(store)
                 .frame(minWidth: 900, minHeight: 560)

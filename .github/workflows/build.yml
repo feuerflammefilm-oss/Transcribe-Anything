@@ -27,14 +27,14 @@ jobs:
       - name: Als Download speichern
         uses: actions/upload-artifact@v4
         with:
-          name: Transcribe-Anything
-          path: build/Transcribe-Anything.zip
+          name: FuFF-Transcribe
+          path: build/FuFF-Transcribe.zip
 
       - name: Release "Neueste Version" aktualisieren
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest build/Transcribe-Anything.zip \
-            --title "Transcribe Anything – neueste Version (Build ${{ github.run_number }})" \
+          gh release create latest build/FuFF-Transcribe.zip \
+            --title "FuFF Transcribe – neueste Version (Build ${{ github.run_number }})" \
             --notes "Automatisch gebaut aus dem aktuellen Stand. ZIP laden, entpacken, App in den Programme-Ordner ziehen."

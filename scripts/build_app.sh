@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Baut "Transcribe Anything.app" (Apple Silicon). Läuft auf GitHub Actions (macOS mit Xcode 26).
+# Baut "FuFF Transcribe.app" (Apple Silicon). Läuft auf GitHub Actions (macOS mit Xcode 26).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-APP_NAME="Transcribe Anything"
+APP_NAME="FuFF Transcribe"
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
 VERSION="${VERSION:-0.1.0}"
@@ -35,5 +35,5 @@ echo "==> Ad-hoc signieren"
 codesign --force --deep --sign - "$APP"
 
 echo "==> ZIP erstellen"
-ditto -c -k --keepParent "$APP" "$BUILD_DIR/Transcribe-Anything.zip"
-echo "Fertig: $BUILD_DIR/Transcribe-Anything.zip"
+ditto -c -k --keepParent "$APP" "$BUILD_DIR/FuFF-Transcribe.zip"
+echo "Fertig: $BUILD_DIR/FuFF-Transcribe.zip"
