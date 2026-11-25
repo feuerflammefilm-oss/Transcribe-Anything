@@ -11,6 +11,8 @@ final class Job: ObservableObject, Identifiable {
     let id = UUID()
     let url: URL
     let options: JobOptions
+    /// Transkript, das nach erfolgreicher Neu-Transkription ersetzt wird
+    var replaces: UUID?
     let cancelFlag = CancelFlag()
     @Published var state: JobState = .waiting
     @Published var phase = "Wartet"
@@ -28,6 +30,8 @@ final class Store: ObservableObject {
     @Published var transcripts: [Transcript] = []
     @Published var jobs: [Job] = []
     @Published var selectedID: UUID?
+    /// Transkript, für das gerade das Fenster "Zurücksetzen" offen ist
+    @Published var resetID: UUID?
 
     /// Die Einstellungen werden in der Seitenleiste per @AppStorage gesetzt.
     private var currentOptions: JobOptions {
@@ -143,9 +147,20 @@ final class Store: ObservableObject {
         jobs.removeAll { $0.id == job.id }
     }
 
+    /// Transkript zurücksetzen: mit neuen Einstellungen nochmal transkribieren, das Ergebnis ersetzt das alte.
+    func reset(_ id: UUID, options: JobOptions) {
+        guard let t = transcript(id) else { return }
+        let job = Job(url: t.sourceURL, options: options)
+        job.replaces = id
+        jobs.append(job)
+        selectedID = job.id
+        Task { await processQueue() }
+    }
+
     func retry(_ job: Job) {
         jobs.removeAll { $0.id == job.id }
         let j = Job(url: job.url, options: job.options)
+        j.replaces = job.replaces
         jobs.append(j)
         selectedID = j.id
         Task { await processQueue() }
@@ -186,6 +201,10 @@ final class Store: ObservableObject {
                 if job.cancelFlag.isCancelled { continue }
                 var t = transcript
                 t.id = job.id   // damit die Auswahl in der Seitenleiste erhalten bleibt
+                if let oldID = job.replaces, let old = self.transcript(oldID) {
+                    t.title = old.title   // selbst vergebenen Titel behalten
+                    delete(oldID)
+                }
                 jobs.removeAll { $0.id == job.id }
                 insert(t, select: selectedID == job.id)
                 didFinish = true

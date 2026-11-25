@@ -155,6 +155,9 @@ struct TranscriptView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup {
+            Button { store.resetID = id } label: { Label("Zurücksetzen", systemImage: "arrow.counterclockwise") }
+                .disabled(!sourceExists)
+                .help("Zurücksetzen: mit anderen Einstellungen (z. B. Sprache) nochmal transkribieren – ersetzt dieses Transkript")
             Button { summarize() } label: { Label("Zusammenfassen", systemImage: "sparkles") }
                 .disabled(summarizing)
                 .help("Zusammenfassung mit Kurzfassung, Hauptthemen und wichtigen Aussagen erstellen (Apple Intelligence)")

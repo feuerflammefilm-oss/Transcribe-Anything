@@ -21,6 +21,11 @@ struct ContentView: View {
             }
             return true
         }
+        .sheet(isPresented: Binding(get: { store.resetID != nil }, set: { if !$0 { store.resetID = nil } })) {
+            if let id = store.resetID, let t = store.transcript(id) {
+                ResetSheet(transcript: t).environmentObject(store)
+            }
+        }
         .overlay {
             if isDropTargeted {
                 RoundedRectangle(cornerRadius: 14)
@@ -96,8 +101,8 @@ struct SidebarView: View {
                         }
                         .tag(t.id)
                         .contextMenu {
-                            Button("Neu transkribieren (mit aktuellen Einstellungen)") {
-                                store.add(urls: [t.sourceURL])
+                            Button("Zurücksetzen und neu transkribieren …") {
+                                store.resetID = t.id
                             }
                             .disabled(!FileManager.default.fileExists(atPath: t.sourcePath))
                             Button("Originaldatei im Finder zeigen") {
