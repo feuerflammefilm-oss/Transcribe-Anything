@@ -157,9 +157,9 @@ struct TranscriptView: View {
         ToolbarItemGroup {
             Button { summarize() } label: { Label("Zusammenfassen", systemImage: "sparkles") }
                 .disabled(summarizing)
-                .help("Zusammenfassung mit Apple Intelligence erstellen")
+                .help("Zusammenfassung mit Kurzfassung, Hauptthemen und wichtigen Aussagen erstellen (Apple Intelligence)")
             Button { showTranslate = true } label: { Label("Übersetzen", systemImage: "translate") }
-                .help("Transkript in eine andere Sprache übersetzen")
+                .help("Transkript in eine andere Sprache übersetzen – wird als neues Transkript gespeichert")
             Menu {
                 Section("Dokument") {
                     ForEach([ExportFormat.txt, .docx, .pdf, .csv]) { f in
@@ -185,6 +185,7 @@ struct TranscriptView: View {
             } label: {
                 Label("Exportieren", systemImage: "square.and.arrow.up")
             }
+            .help("Als Text, Word, PDF, Tabelle oder Untertitel (SRT/VTT) speichern")
         }
     }
 
