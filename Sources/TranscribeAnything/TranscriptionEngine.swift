@@ -186,7 +186,9 @@ actor TranscriptionEngine {
         for seg in segments {
             if let ws = seg.words, !ws.isEmpty {
                 for w in ws where !w.word.trimmingCharacters(in: .whitespaces).isEmpty {
-                    words.append(Word(text: w.word, start: Double(w.start), end: Double(w.end)))
+                    // Erstes Wort eines Segments hat oft kein Leerzeichen davor ("Halleluja!Mein")
+                    let text = w.word.first?.isWhitespace == true ? w.word : " " + w.word
+                    words.append(Word(text: text, start: Double(w.start), end: Double(w.end)))
                 }
             } else {
                 words.append(contentsOf: spread(text: seg.text, start: Double(seg.start), end: Double(seg.end)))
@@ -247,7 +249,8 @@ actor TranscriptionEngine {
         func flush() {
             guard let first = current.first, let last = current.last else { return }
             let text = current.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
-            result.append(Utterance(speaker: currentSpeaker, start: first.start, end: last.end, text: text, words: current))
+            let u = Utterance(speaker: currentSpeaker, start: first.start, end: last.end, text: text, words: current)
+            result.append(contentsOf: u.splitAtPauses())
             current = []
         }
 

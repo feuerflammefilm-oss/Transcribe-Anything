@@ -18,7 +18,7 @@ final class Player: ObservableObject {
         self.url = url
         self.duration = duration
         let p = AVPlayer(url: url)
-        observer = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] time in
+        observer = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.05, preferredTimescale: 600), queue: .main) { [weak self] time in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.currentTime = time.seconds

@@ -13,6 +13,13 @@ struct TranscriptView: View {
     @State private var summaryStatus = ""
     @State private var summaryError: String?
     @State private var showSummary = true
+    @State private var focusRequest: FocusRequest?
+    @State private var lastClickSeek = Date.distantPast
+
+    struct FocusRequest: Equatable { let id: UUID; let offset: Int }
+
+    /// Hervorhebung etwas vorziehen, damit der Text nicht hinter dem Ton herhinkt
+    private let lead = 0.15
 
     @AppStorage("exportTimestamps") private var exportTimestamps = true
     @AppStorage("subtitleSpeaker") private var subtitleSpeaker = false
@@ -35,7 +42,7 @@ struct TranscriptView: View {
     }
 
     private var currentID: UUID? {
-        t.utterances.last { $0.start <= player.currentTime + 0.05 }?.id
+        t.utterances.last { $0.start <= player.currentTime + lead }?.id
     }
 
     var body: some View {
@@ -49,12 +56,18 @@ struct TranscriptView: View {
                         ForEach(visible) { u in
                             let isCurrent = u.id == currentID && (player.isPlaying || player.currentTime > 0)
                             UtteranceRow(
-                                utterance: utteranceBinding(u.id),
+                                utterance: u,
                                 transcript: t,
                                 isCurrent: isCurrent,
-                                playbackTime: isCurrent && player.isPlaying ? player.currentTime : nil,
+                                highlight: isCurrent && player.currentTime > 0 ? u.range(at: player.currentTime + lead) : nil,
+                                follow: follow && player.isPlaying,
+                                focusOffset: focusRequest?.id == u.id ? focusRequest?.offset : nil,
                                 onSeek: { player.seek(u.start, play: true) },
-                                onEdit: { if player.isPlaying { player.toggle() } },
+                                onChange: { editText(u.id, $0) },
+                                onClick: { clickSeek(u.id, $0) },
+                                onSplit: { split(u.id, at: $0) },
+                                onMergeUp: { mergeWithPrevious(u.id) },
+                                onFocused: { focusRequest = nil },
                                 onSpeaker: { setSpeaker(u.id, $0) }
                             )
                             .id(u.id)
@@ -65,6 +78,8 @@ struct TranscriptView: View {
                 .onChange(of: currentID) { _, newID in
                     // Auch beim Ziehen des Reglers oder Springen mitscrollen, nicht nur beim Abspielen
                     guard follow, let newID else { return }
+                    // Nach einem Klick in den Text nicht wegscrollen
+                    guard Date().timeIntervalSince(lastClickSeek) > 0.5 else { return }
                     withAnimation { proxy.scrollTo(newID, anchor: .center) }
                 }
             }
@@ -198,17 +213,40 @@ struct TranscriptView: View {
 
     // MARK: - Aktionen
 
-    private func utteranceBinding(_ uid: UUID) -> Binding<Utterance> {
-        Binding(
-            get: { t.utterances.first { $0.id == uid } ?? Utterance(speaker: 1, start: 0, end: 0, text: "", words: []) },
-            set: { newValue in
-                var copy = t
-                if let i = copy.utterances.firstIndex(where: { $0.id == uid }) {
-                    copy.utterances[i] = newValue
-                    store.update(copy)
-                }
-            }
-        )
+    private func editText(_ uid: UUID, _ newText: String) {
+        var copy = t
+        guard let i = copy.utterances.firstIndex(where: { $0.id == uid }) else { return }
+        copy.utterances[i].applyEdit(newText)
+        store.update(copy)
+    }
+
+    /// Klick in den Text: Ton springt an diese Stelle
+    private func clickSeek(_ uid: UUID, _ offset: Int) {
+        guard let u = t.utterances.first(where: { $0.id == uid }) else { return }
+        lastClickSeek = Date()
+        player.seek(u.time(atOffset: offset))
+    }
+
+    /// Enter: Absatz an der Cursorposition teilen, neuer Absatz bekommt eigenen Zeitstempel
+    private func split(_ uid: UUID, at offset: Int) {
+        var copy = t
+        guard let i = copy.utterances.firstIndex(where: { $0.id == uid }) else { return }
+        let (a, b) = copy.utterances[i].split(atOffset: offset)
+        copy.utterances.replaceSubrange(i...i, with: [a, b])
+        store.update(copy)
+        focusRequest = FocusRequest(id: b.id, offset: 0)
+    }
+
+    /// Rücktaste am Absatzanfang: mit dem vorherigen Absatz zusammenführen
+    private func mergeWithPrevious(_ uid: UUID) {
+        var copy = t
+        guard let i = copy.utterances.firstIndex(where: { $0.id == uid }), i > 0 else { return }
+        let prevLength = (copy.utterances[i - 1].text as NSString).length
+        let joinsWithSpace = prevLength > 0 && !copy.utterances[i].text.isEmpty
+        copy.utterances[i - 1].merge(copy.utterances[i])
+        copy.utterances.remove(at: i)
+        store.update(copy)
+        focusRequest = FocusRequest(id: copy.utterances[i - 1].id, offset: prevLength + (joinsWithSpace ? 1 : 0))
     }
 
     private func speakerNameBinding(_ sp: Int) -> Binding<String> {
@@ -222,7 +260,6 @@ struct TranscriptView: View {
         var copy = t
         if let i = copy.utterances.firstIndex(where: { $0.id == uid }) {
             copy.utterances[i].speaker = speaker
-            copy.mergeAdjacentSpeakers()
             store.update(copy)
         }
     }
@@ -273,28 +310,19 @@ struct TranscriptView: View {
 // MARK: - Eine Zeile im Transkript
 
 struct UtteranceRow: View {
-    @Binding var utterance: Utterance
+    let utterance: Utterance
     let transcript: Transcript
     let isCurrent: Bool
-    /// Aktuelle Wiedergabezeit, nur gesetzt, solange diese Zeile gerade abgespielt wird.
-    let playbackTime: Double?
+    let highlight: NSRange?
+    let follow: Bool
+    let focusOffset: Int?
     let onSeek: () -> Void
-    /// Wird aufgerufen, wenn man während der Wiedergabe in den Text klickt (pausiert).
-    let onEdit: () -> Void
+    let onChange: (String) -> Void
+    let onClick: (Int) -> Void
+    let onSplit: (Int) -> Void
+    let onMergeUp: () -> Void
+    let onFocused: () -> Void
     let onSpeaker: (Int) -> Void
-
-    private var textBinding: Binding<String> {
-        Binding(
-            get: { utterance.text },
-            set: { newText in
-                guard newText != utterance.text else { return }
-                var u = utterance
-                u.text = newText
-                u.words = []    // Wortzeiten passen nach dem Bearbeiten nicht mehr
-                utterance = u
-            }
-        )
-    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -326,21 +354,19 @@ struct UtteranceRow: View {
             }
             .frame(width: 140, alignment: .leading)
 
-            if let playbackTime {
-                // Während der Wiedergabe: das gerade gesprochene Wort hervorheben
-                Text(highlighted(at: playbackTime))
-                    .font(.body)
-                    .lineSpacing(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { onEdit() }
-                    .help("Klicken zum Bearbeiten (pausiert die Wiedergabe)")
-            } else {
-                TextField("", text: textBinding, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.body)
-                    .lineSpacing(3)
-            }
+            TranscriptTextView(
+                text: utterance.text,
+                highlight: highlight,
+                follow: follow,
+                focusOffset: focusOffset,
+                onChange: onChange,
+                onClick: onClick,
+                onSplit: onSplit,
+                onMergeUp: onMergeUp,
+                onFocused: onFocused
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("Klicken springt im Ton an diese Stelle · Enter teilt den Absatz")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 9)
@@ -350,35 +376,6 @@ struct UtteranceRow: View {
                 Rectangle().fill(Color.accentColor).frame(width: 4)
             }
         }
-    }
-
-    /// Wörter mit Zeiten passend zum angezeigten Text (nach Bearbeitung grob verteilt).
-    private var displayWords: [Word] {
-        let text = utterance.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !utterance.words.isEmpty,
-           utterance.words.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines) == text {
-            return utterance.words
-        }
-        return TranscriptionEngine.spread(text: text, start: utterance.start, end: utterance.end)
-    }
-
-    private func highlighted(at time: Double) -> AttributedString {
-        let words = displayWords
-        let current = words.lastIndex { $0.start <= time + 0.05 }
-        var result = AttributedString()
-        for (i, w) in words.enumerated() {
-            let raw = i == 0 ? String(w.text.drop(while: \.isWhitespace)) : w.text
-            let core = raw.drop(while: \.isWhitespace)
-            result += AttributedString(String(raw.prefix(raw.count - core.count)))
-            var part = AttributedString(String(core))
-            if i == current {
-                part.backgroundColor = Color.accentColor.opacity(0.45)
-            } else if let current, i > current {
-                part.foregroundColor = .secondary
-            }
-            result += part
-        }
-        return result
     }
 }
 
