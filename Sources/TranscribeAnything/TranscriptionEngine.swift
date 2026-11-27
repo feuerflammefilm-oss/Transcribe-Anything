@@ -101,13 +101,13 @@ actor TranscriptionEngine {
         guard duration > 0.3 else { throw EngineError.noSpeech }
         if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
 
-        // 1. Sprecher erkennen
+        // 1. Sprecher erkennen (auch bei "1 Sprecher": zeigt, wo überhaupt gesprochen wird)
         var spans: [(speaker: Int, start: Double, end: Double)] = []
-        if options.speakers != 1 {
+        do {
             let sk = try await prepareSpeakerKit(report: report)
             if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
             report("Sprecher werden erkannt", 0, nil)
-            let diarOptions = PyannoteDiarizationOptions(numberOfSpeakers: options.speakers == 0 ? nil : options.speakers)
+            let diarOptions = PyannoteDiarizationOptions(numberOfSpeakers: options.speakers <= 1 ? nil : options.speakers)
             let result = try await sk.diarize(audioArray: samples, options: diarOptions, progressCallback: { p in
                 report("Sprecher werden erkannt", p.fractionCompleted, nil)
             })
@@ -162,11 +162,37 @@ actor TranscriptionEngine {
         )
         if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
 
-        // 3. Wörter den Sprechern zuordnen
-        let words = Self.collectWords(results)
-        guard !words.isEmpty else { throw EngineError.noSpeech }
-        let utterances = Self.buildUtterances(words: words, spans: spans)
         let language = options.language.isEmpty ? (results.first?.language ?? "") : options.language
+        var words = Self.collectWords(results)
+
+        // 3. Lücken nachholen: Whisper überspringt manchmal ganze 30-s-Abschnitte
+        //    (z. B. bei Musik im Hintergrund). Stellen, an denen laut Sprechererkennung
+        //    gesprochen wird, die aber keinen Text haben, werden einzeln nochmal transkribiert.
+        let gaps = Self.missingSpeech(words: words, spans: spans, duration: duration)
+        if !gaps.isEmpty {
+            whisper.segmentDiscoveryCallback = nil
+            var gapDecode = decode
+            gapDecode.language = language.isEmpty ? nil : language
+            gapDecode.detectLanguage = language.isEmpty
+            gapDecode.noSpeechThreshold = nil   // hier wissen wir, dass gesprochen wird
+            for (n, gap) in gaps.enumerated() {
+                if cancel.isCancelled || Task.isCancelled { throw EngineError.cancelled }
+                report("Lücken werden nachgeprüft", Double(n) / Double(gaps.count), nil)
+                let from = max(0, gap.lowerBound - 1), to = min(duration, gap.upperBound + 1)
+                let lo = Int(from * AudioLoader.sampleRate), hi = min(samples.count, Int(to * AudioLoader.sampleRate))
+                guard hi - lo > Int(AudioLoader.sampleRate) else { continue }
+                let r = try await whisper.transcribe(audioArray: Array(samples[lo..<hi]), decodeOptions: gapDecode)
+                let found = Self.collectWords(r)
+                    .map { Word(text: $0.text, start: $0.start + from, end: $0.end + from) }
+                    .filter { gap.contains(($0.start + min($0.end, $0.start + 1.5)) / 2) }
+                words.append(contentsOf: found)
+            }
+            words.sort { $0.start < $1.start }
+        }
+        guard !words.isEmpty else { throw EngineError.noSpeech }
+
+        // 4. Wörter den Sprechern zuordnen (bei "1 Sprecher" alle derselben Person)
+        let utterances = Self.buildUtterances(words: words, spans: options.speakers == 1 ? [] : spans)
 
         report("Fertig", 1, nil)
         return Transcript(
@@ -195,6 +221,47 @@ actor TranscriptionEngine {
             }
         }
         return words.sorted { $0.start < $1.start }
+    }
+
+    /// Bereiche, in denen laut Sprechererkennung gesprochen wird, für die Whisper aber keinen Text hat.
+    static func missingSpeech(words: [Word], spans: [(speaker: Int, start: Double, end: Double)], duration: Double) -> [ClosedRange<Double>] {
+        guard !spans.isEmpty else { return [] }
+        // Von Wörtern abgedeckte Zeit (ein Wort zählt höchstens 1,5 s, plus etwas Rand)
+        let covered = words.map { ($0.start - 1.0)...(min($0.end, $0.start + 1.5) + 1.0) }
+        // Sprache aus der Sprechererkennung, zusammengefasst
+        var speech: [ClosedRange<Double>] = []
+        for s in spans.sorted(by: { $0.start < $1.start }) {
+            if let last = speech.last, s.start <= last.upperBound + 1.0 {
+                speech[speech.count - 1] = last.lowerBound...max(last.upperBound, s.end)
+            } else {
+                speech.append(s.start...s.end)
+            }
+        }
+        // Sprache minus abgedeckte Zeit
+        var missing: [ClosedRange<Double>] = []
+        for sp in speech {
+            var pieces = [sp]
+            for c in covered where c.overlaps(sp) {
+                pieces = pieces.flatMap { p -> [ClosedRange<Double>] in
+                    guard c.overlaps(p) else { return [p] }
+                    var out: [ClosedRange<Double>] = []
+                    if c.lowerBound > p.lowerBound { out.append(p.lowerBound...c.lowerBound) }
+                    if c.upperBound < p.upperBound { out.append(c.upperBound...p.upperBound) }
+                    return out
+                }
+            }
+            missing.append(contentsOf: pieces)
+        }
+        // Nahe Stücke zusammenfassen, zu kurze verwerfen
+        var merged: [ClosedRange<Double>] = []
+        for m in missing.sorted(by: { $0.lowerBound < $1.lowerBound }) {
+            if let last = merged.last, m.lowerBound - last.upperBound < 2 {
+                merged[merged.count - 1] = last.lowerBound...max(last.upperBound, m.upperBound)
+            } else {
+                merged.append(m)
+            }
+        }
+        return merged.filter { $0.upperBound - $0.lowerBound >= 1.5 && $0.lowerBound < duration }
     }
 
     /// Verteilt Wörter gleichmäßig über eine Zeitspanne (wenn keine Wortzeiten vorhanden sind).
