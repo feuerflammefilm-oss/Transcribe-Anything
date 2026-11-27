@@ -241,6 +241,14 @@ actor TranscriptionEngine {
             return n
         }
 
+        // Bereiche, in denen laut Sprechererkennung niemand spricht (z. B. Musik)
+        var silences: [ClosedRange<Double>] = []
+        var speechEnd: Double?
+        for s in spans.sorted(by: { $0.start < $1.start }) {
+            if let e = speechEnd, s.start > e { silences.append(e...s.start) }
+            speechEnd = max(speechEnd ?? s.end, s.end)
+        }
+
         // Wörter zu Absätzen gruppieren
         var result: [Utterance] = []
         var current: [Word] = []
@@ -250,7 +258,7 @@ actor TranscriptionEngine {
             guard let first = current.first, let last = current.last else { return }
             let text = current.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines)
             let u = Utterance(speaker: currentSpeaker, start: first.start, end: last.end, text: text, words: current)
-            result.append(contentsOf: u.splitAtPauses())
+            result.append(contentsOf: u.splitAtPauses(silences: silences))
             current = []
         }
 

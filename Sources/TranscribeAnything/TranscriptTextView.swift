@@ -32,6 +32,15 @@ struct TranscriptTextView: NSViewRepresentable {
             parent.onChange(tv.string)
         }
 
+        func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange, replacementString: String?) -> Bool {
+            // Falls ein Zeilenumbruch doch als Text ankommt: ebenfalls teilen
+            if replacementString == "\n" || replacementString == "\r" {
+                parent.onSplit(range.location)
+                return false
+            }
+            return true
+        }
+
         func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             if selector == #selector(NSResponder.insertNewline(_:)) {
                 parent.onSplit(textView.selectedRange().location)
@@ -47,6 +56,17 @@ struct TranscriptTextView: NSViewRepresentable {
 
     final class ClickTextView: NSTextView {
         var onClick: ((Int) -> Void)?
+        var onSplit: ((Int) -> Void)?
+
+        override func keyDown(with event: NSEvent) {
+            // Return (36) bzw. Enter am Ziffernblock (76) ohne Zusatztasten: Absatz teilen
+            let mods = event.modifierFlags.intersection([.shift, .option, .command, .control])
+            if (event.keyCode == 36 || event.keyCode == 76), mods.isEmpty, !hasMarkedText() {
+                onSplit?(selectedRange().location)
+                return
+            }
+            super.keyDown(with: event)
+        }
 
         override func mouseDown(with event: NSEvent) {
             super.mouseDown(with: event)   // läuft, bis die Maus losgelassen wird
@@ -86,6 +106,7 @@ struct TranscriptTextView: NSViewRepresentable {
     func updateNSView(_ tv: ClickTextView, context: Context) {
         context.coordinator.parent = self
         tv.onClick = onClick
+        tv.onSplit = onSplit
         if tv.string != text {
             let sel = tv.selectedRange()
             tv.string = text

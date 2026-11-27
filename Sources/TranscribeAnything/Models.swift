@@ -229,20 +229,28 @@ extension Utterance {
 
     /// Neuer Absatz, wenn länger als `gap` Sekunden nichts gesagt wird – oder bei sehr langen
     /// Absätzen am nächsten Satzende, damit kein riesiger Block entsteht.
-    func splitAtPauses(gap: Double = 5, maxDuration: Double = 45) -> [Utterance] {
+    /// `silences`: Bereiche ohne Sprache aus der Sprechererkennung (falls vorhanden).
+    func splitAtPauses(gap: Double = 5, maxDuration: Double = 45, silences: [ClosedRange<Double>] = []) -> [Utterance] {
         let ws = words
         guard ws.count > 1 else { return [self] }
+        // Whisper zieht Wörter vor/nach Musik oft über die ganze Pause –
+        // kein Wort dauert länger als 1,5 s.
+        let maxWord = 1.5
         var paragraphStart = ws[0].start
         for i in 1..<ws.count {
-            let prevText = ws[i - 1].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let prev = ws[i - 1], cur = ws[i]
+            let prevText = prev.text.trimmingCharacters(in: .whitespacesAndNewlines)
             let sentenceEnd = prevText.last.map { ".?!…".contains($0) } ?? false
-            let pause = ws[i].start - ws[i - 1].end > gap
+            let spokenEnd = min(prev.end, prev.start + maxWord)
+            let spokenStart = max(cur.start, cur.end - maxWord)
+            let silence = silences.contains { $0.upperBound - $0.lowerBound > gap && $0.lowerBound >= prev.start - 0.5 && $0.upperBound <= cur.end + 0.5 }
+            let pause = spokenStart - spokenEnd > gap || silence
             let tooLong = sentenceEnd && ws[i].start - paragraphStart > maxDuration
             guard pause || tooLong else { continue }
             guard let r = Self.locate(ws, in: text)[i], r.location > 0 else { paragraphStart = ws[i].start; continue }
             let (a, b) = split(atOffset: r.location)
             guard !a.text.isEmpty, !b.text.isEmpty else { paragraphStart = ws[i].start; continue }
-            return [a] + b.splitAtPauses(gap: gap, maxDuration: maxDuration)
+            return [a] + b.splitAtPauses(gap: gap, maxDuration: maxDuration, silences: silences)
         }
         return [self]
     }
