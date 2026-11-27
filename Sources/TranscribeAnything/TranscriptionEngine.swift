@@ -182,6 +182,13 @@ actor TranscriptionEngine {
                 let lo = Int(from * AudioLoader.sampleRate), hi = min(samples.count, Int(to * AudioLoader.sampleRate))
                 guard hi - lo > Int(AudioLoader.sampleRate) else { continue }
                 let r = try await whisper.transcribe(audioArray: Array(samples[lo..<hi]), decodeOptions: gapDecode)
+                // Unsichere oder typische "erfundene" Sätze (bei Musik) verwerfen
+                for res in r {
+                    res.segments = res.segments.filter { seg in
+                        let t = seg.text.lowercased()
+                        return seg.avgLogprob > -1.0 && !t.contains("untertitel") && !t.contains("zdf")
+                    }
+                }
                 let found = Self.collectWords(r)
                     .map { Word(text: $0.text, start: $0.start + from, end: $0.end + from) }
                     .filter { gap.contains(($0.start + min($0.end, $0.start + 1.5)) / 2) }
