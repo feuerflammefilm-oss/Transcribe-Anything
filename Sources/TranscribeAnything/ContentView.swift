@@ -74,15 +74,12 @@ struct EmptyStateView: View {
 
 struct SidebarView: View {
     @EnvironmentObject var store: Store
-    @AppStorage("language") private var language = ""
-    @AppStorage("speakers") private var speakers = 0
-    @AppStorage("quality") private var quality = Quality.best
 
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $store.selectedID) {
                 if !store.jobs.isEmpty {
-                    Section("In Arbeit") {
+                    Section("Geladen / in Arbeit") {
                         ForEach(store.jobs) { job in
                             JobRow(job: job).tag(job.id)
                         }
@@ -120,35 +117,15 @@ struct SidebarView: View {
                 if let id = store.selectedID, store.transcript(id) != nil { store.delete(id) }
             }
 
-            Divider()
-            settings
         }
         .toolbar {
             ToolbarItem {
                 Button { openFiles(store: store) } label: { Label("Hinzufügen", systemImage: "plus") }
-                    .help("Dateien transkribieren (⌘O)")
+                    .help("Dateien laden (⌘O) – danach Einstellungen wählen und „Los“ drücken")
             }
         }
     }
 
-    private var settings: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Für neue Dateien").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Picker("Sprache", selection: $language) {
-                ForEach(LanguageOption.all) { Text($0.name).tag($0.code) }
-            }
-            Picker("Sprecher", selection: $speakers) {
-                Text("Automatisch").tag(0)
-                Text("Nur eine Person").tag(1)
-                ForEach(2...10, id: \.self) { Text("\($0) Personen").tag($0) }
-            }
-            Picker("Genauigkeit", selection: $quality) {
-                ForEach(Quality.allCases) { Text($0.title).tag($0) }
-            }
-        }
-        .pickerStyle(.menu)
-        .padding(12)
-    }
 }
 
 struct JobRow: View {
@@ -158,6 +135,8 @@ struct JobRow: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(job.url.lastPathComponent).lineLimit(1)
             switch job.state {
+            case .ready:
+                Text("Bereit – Einstellungen wählen").font(.caption).foregroundStyle(.secondary)
             case .waiting:
                 Text("Wartet").font(.caption).foregroundStyle(.secondary)
             case .running:
@@ -173,11 +152,21 @@ struct JobDetailView: View {
     @EnvironmentObject var store: Store
     @ObservedObject var job: Job
 
+    // Zuletzt gewählte Einstellungen werden für die nächste Datei gemerkt
+    @AppStorage("language") private var language = ""
+    @AppStorage("speakers") private var speakers = 0
+    @AppStorage("quality") private var quality = Quality.best
+
+    private var readyJobs: [Job] { store.jobs.filter { $0.state == .ready } }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(job.url.lastPathComponent).font(.title2.weight(.semibold))
 
             switch job.state {
+            case .ready:
+                Label("Geladen – wähle unten die Einstellungen und drück auf „Los“.", systemImage: "checkmark.circle")
+                    .foregroundStyle(.secondary)
             case .waiting:
                 Label("Wartet auf die vorherige Datei", systemImage: "clock").foregroundStyle(.secondary)
             case .running:
@@ -204,12 +193,49 @@ struct JobDetailView: View {
                 }
             }
             Spacer()
+            if job.state == .ready {
+                Divider()
+                settings
+            }
             HStack {
                 Spacer()
                 Button(job.state == .running ? "Abbrechen" : "Entfernen", role: .destructive) { store.cancel(job) }
+                if job.state == .ready {
+                    if readyJobs.count > 1 {
+                        Button("Alle \(readyJobs.count) starten") { store.start(readyJobs, options: chosen) }
+                            .help("Alle geladenen Dateien mit diesen Einstellungen transkribieren")
+                    }
+                    Button("Los") { store.start([job], options: chosen) }
+                        .keyboardShortcut(.defaultAction)
+                        .controlSize(.large)
+                        .help("Diese Datei mit den gewählten Einstellungen transkribieren")
+                }
             }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var chosen: JobOptions { JobOptions(language: language, speakers: speakers, quality: quality) }
+
+    private var settings: some View {
+        Form {
+            Picker("Sprache", selection: $language) {
+                ForEach(LanguageOption.all) { Text($0.name).tag($0.code) }
+            }
+            .help("In welcher Sprache wird gesprochen? „Automatisch“ erkennt sie selbst.")
+            Picker("Sprecher", selection: $speakers) {
+                Text("Automatisch").tag(0)
+                Text("Nur eine Person").tag(1)
+                ForEach(2...10, id: \.self) { Text("\($0) Personen").tag($0) }
+            }
+            .help("Wie viele Personen sprechen? Wenn du es weißt, wird die Zuordnung genauer.")
+            Picker("Genauigkeit", selection: $quality) {
+                ForEach(Quality.allCases) { Text($0.title).tag($0) }
+            }
+            .help("Beste Qualität ist genauer, Schneller ist flotter.")
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: 420, alignment: .leading)
     }
 }

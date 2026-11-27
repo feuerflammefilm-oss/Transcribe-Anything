@@ -3,6 +3,8 @@ import Foundation
 import SwiftUI
 
 enum JobState: Equatable {
+    /// geladen, Einstellungen werden noch gewählt – startet erst mit "Los"
+    case ready
     case waiting, running, failed(String)
 }
 
@@ -10,7 +12,7 @@ enum JobState: Equatable {
 final class Job: ObservableObject, Identifiable {
     let id = UUID()
     let url: URL
-    let options: JobOptions
+    var options: JobOptions
     /// Transkript, das nach erfolgreicher Neu-Transkription ersetzt wird
     var replaces: UUID?
     let cancelFlag = CancelFlag()
@@ -130,10 +132,23 @@ final class Store: ObservableObject {
                 files.append(url)
             }
         }
+        // Nur laden – transkribiert wird erst, wenn man die Einstellungen gewählt und "Los" gedrückt hat
         let options = currentOptions
-        let newJobs = files.map { Job(url: $0, options: options) }
+        let newJobs = files.map { url -> Job in
+            let job = Job(url: url, options: options)
+            job.state = .ready
+            return job
+        }
         jobs += newJobs
         if let first = newJobs.first { selectedID = first.id }
+    }
+
+    /// Geladene Dateien mit den gewählten Einstellungen transkribieren.
+    func start(_ toStart: [Job], options: JobOptions) {
+        for job in toStart where job.state == .ready {
+            job.options = options
+            job.state = .waiting
+        }
         Task { await processQueue() }
     }
 

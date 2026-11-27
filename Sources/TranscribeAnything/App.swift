@@ -23,7 +23,7 @@ struct TranscribeAnythingApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Dateien transkribieren …") { openFiles(store: store) }
+                Button("Dateien öffnen …") { openFiles(store: store) }
                     .keyboardShortcut("o")
             }
         }
@@ -36,6 +36,6 @@ func openFiles(store: Store) {
     panel.allowsMultipleSelection = true
     panel.canChooseDirectories = true
     panel.canChooseFiles = true
-    panel.prompt = "Transkribieren"
+    panel.prompt = "Laden"
     if panel.runModal() == .OK { store.add(urls: panel.urls) }
 }
