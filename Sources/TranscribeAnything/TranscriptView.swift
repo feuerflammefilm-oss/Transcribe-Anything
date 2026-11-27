@@ -47,11 +47,14 @@ struct TranscriptView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         summarySection
                         ForEach(visible) { u in
+                            let isCurrent = u.id == currentID && (player.isPlaying || player.currentTime > 0)
                             UtteranceRow(
                                 utterance: utteranceBinding(u.id),
                                 transcript: t,
-                                isCurrent: u.id == currentID && player.currentTime > 0,
+                                isCurrent: isCurrent,
+                                playbackTime: isCurrent && player.isPlaying ? player.currentTime : nil,
                                 onSeek: { player.seek(u.start, play: true) },
+                                onEdit: { if player.isPlaying { player.toggle() } },
                                 onSpeaker: { setSpeaker(u.id, $0) }
                             )
                             .id(u.id)
@@ -60,7 +63,8 @@ struct TranscriptView: View {
                     .padding(.vertical, 8)
                 }
                 .onChange(of: currentID) { _, newID in
-                    guard follow, player.isPlaying, let newID else { return }
+                    // Auch beim Ziehen des Reglers oder Springen mitscrollen, nicht nur beim Abspielen
+                    guard follow, let newID else { return }
                     withAnimation { proxy.scrollTo(newID, anchor: .center) }
                 }
             }
@@ -272,7 +276,11 @@ struct UtteranceRow: View {
     @Binding var utterance: Utterance
     let transcript: Transcript
     let isCurrent: Bool
+    /// Aktuelle Wiedergabezeit, nur gesetzt, solange diese Zeile gerade abgespielt wird.
+    let playbackTime: Double?
     let onSeek: () -> Void
+    /// Wird aufgerufen, wenn man während der Wiedergabe in den Text klickt (pausiert).
+    let onEdit: () -> Void
     let onSpeaker: (Int) -> Void
 
     private var textBinding: Binding<String> {
@@ -318,14 +326,59 @@ struct UtteranceRow: View {
             }
             .frame(width: 140, alignment: .leading)
 
-            TextField("", text: textBinding, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .lineSpacing(3)
+            if let playbackTime {
+                // Während der Wiedergabe: das gerade gesprochene Wort hervorheben
+                Text(highlighted(at: playbackTime))
+                    .font(.body)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onEdit() }
+                    .help("Klicken zum Bearbeiten (pausiert die Wiedergabe)")
+            } else {
+                TextField("", text: textBinding, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .lineSpacing(3)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 9)
-        .background(isCurrent ? Color.accentColor.opacity(0.10) : Color.clear)
+        .background(isCurrent ? Color.accentColor.opacity(0.16) : Color.clear)
+        .overlay(alignment: .leading) {
+            if isCurrent {
+                Rectangle().fill(Color.accentColor).frame(width: 4)
+            }
+        }
+    }
+
+    /// Wörter mit Zeiten passend zum angezeigten Text (nach Bearbeitung grob verteilt).
+    private var displayWords: [Word] {
+        let text = utterance.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !utterance.words.isEmpty,
+           utterance.words.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines) == text {
+            return utterance.words
+        }
+        return TranscriptionEngine.spread(text: text, start: utterance.start, end: utterance.end)
+    }
+
+    private func highlighted(at time: Double) -> AttributedString {
+        let words = displayWords
+        let current = words.lastIndex { $0.start <= time + 0.05 }
+        var result = AttributedString()
+        for (i, w) in words.enumerated() {
+            let raw = i == 0 ? String(w.text.drop(while: \.isWhitespace)) : w.text
+            let core = raw.drop(while: \.isWhitespace)
+            result += AttributedString(String(raw.prefix(raw.count - core.count)))
+            var part = AttributedString(String(core))
+            if i == current {
+                part.backgroundColor = Color.accentColor.opacity(0.45)
+            } else if let current, i > current {
+                part.foregroundColor = .secondary
+            }
+            result += part
+        }
+        return result
     }
 }
 
